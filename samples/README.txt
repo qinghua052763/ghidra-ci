@@ -1,1 +1,2 @@
-Sat Oct 24 14:10:45 CST 2026
+把要分析的 .so/.elf/.exe 丢这个目录，push 就会自动反编译。
+当前样本：libzip.so（202KB, ARM64 ELF）
