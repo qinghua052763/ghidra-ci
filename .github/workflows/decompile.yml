@@ -62,22 +62,31 @@ jobs:
 
       - name: 反编译全部函数
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          mkdir -p "$PWD/proj"
           export DECOMP_OUT="$PWD/decompiled.c"
           "$GHIDRA_HOME/support/analyzeHeadless" "$PWD/proj" p1 \
             -import "$TARGET" \
             -scriptPath "$PWD/scripts" \
             -postScript DecompileAll.java \
             -analysisTimeoutPerFile 3600 \
-            -deleteProject
+            -deleteProject 2>&1 | tee ghidra.log
+          if [ ! -f decompiled.c ]; then
+            echo "::error::没生成 decompiled.c，看 ghidra.log"
+            tail -40 ghidra.log
+            exit 1
+          fi
           echo "---- 输出大小 ----"
           wc -l decompiled.c
           echo "---- 前 30 行 ----"
           head -30 decompiled.c
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: decompiled-c
-          path: decompiled.c
-          if-no-files-found: error
+          path: |
+            decompiled.c
+            ghidra.log
+          if-no-files-found: warn
           retention-days: 30
