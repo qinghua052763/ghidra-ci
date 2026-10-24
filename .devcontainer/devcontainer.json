@@ -1,0 +1,23 @@
+{
+  "name": "ghidra-reverse",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "21",
+      "jdkDistro": "tem"
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/setup-ghidra.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "redhat.java"
+      ]
+    }
+  },
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "8gb",
+    "storage": "32gb"
+  }
+}
