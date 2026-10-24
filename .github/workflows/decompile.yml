@@ -4,7 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "仓库内待分析文件路径（留空=自动取 samples/ 第一个）"
+        description: "仓库内文件路径（留空=自动取 samples/ 里第一个文件）"
+        required: false
+        default: ""
+      sample_url:
+        description: "可选：样本下载直链（填了就忽略 target）"
         required: false
         default: ""
   push:
@@ -14,7 +18,7 @@ on:
 jobs:
   ghidra:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -23,34 +27,57 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: 下载 Ghidra（最新版）
+      - name: 准备样本
         run: |
-          set -e
+          set -euo pipefail
+          mkdir -p work
+          URL="${{ inputs.sample_url }}"
+          TARGET="${{ inputs.target }}"
+          if [ -n "$URL" ]; then
+            echo "下载: $URL"
+            curl -sL "$URL" -o work/sample.bin
+            TARGET="work/sample.bin"
+          elif [ -z "$TARGET" ]; then
+            TARGET=$(git ls-files samples | grep -v README | head -1 || true)
+          fi
+          if [ -z "$TARGET" ]; then
+            echo "::error::samples/ 里没有文件，也没给 sample_url"
+            exit 1
+          fi
+          ls -l "$TARGET"
+          file "$TARGET" || true
+          echo "TARGET=$TARGET" >> "$GITHUB_ENV"
+
+      - name: 下载 Ghidra（最新正式版）
+        run: |
+          set -euo pipefail
           URL=$(curl -s https://api.github.com/repos/NationalSecurityAgency/ghidra/releases/latest \
                 | jq -r '.assets[] | select(.name|endswith(".zip")) | .browser_download_url' | head -1)
           echo "Ghidra: $URL"
           curl -sL "$URL" -o /tmp/ghidra.zip
           unzip -q /tmp/ghidra.zip -d "$HOME"
-          ls -d "$HOME"/ghidra_*_PUBLIC
+          GH=$(ls -d "$HOME"/ghidra_*_PUBLIC | head -1)
+          echo "GHIDRA_HOME=$GH" >> "$GITHUB_ENV"
+          "$GH/support/analyzeHeadless" 2>&1 | head -5 || true
 
       - name: 反编译全部函数
         run: |
-          set -e
-          GH=$(ls -d "$HOME"/ghidra_*_PUBLIC | head -1)
-          TARGET="${{ inputs.target }}"
-          if [ -z "$TARGET" ]; then TARGET=$(git ls-files samples | head -1); fi
-          echo "目标: $TARGET"
+          set -euo pipefail
           export DECOMP_OUT="$PWD/decompiled.c"
-          "$GH/support/analyzeHeadless" "$PWD/proj" p1 \
+          "$GHIDRA_HOME/support/analyzeHeadless" "$PWD/proj" p1 \
             -import "$TARGET" \
             -scriptPath "$PWD/scripts" \
             -postScript DecompileAll.java \
+            -analysisTimeoutPerFile 3600 \
             -deleteProject
-          ls -l decompiled.c
-          head -40 decompiled.c
+          echo "---- 输出大小 ----"
+          wc -l decompiled.c
+          echo "---- 前 30 行 ----"
+          head -30 decompiled.c
 
       - uses: actions/upload-artifact@v4
         with:
           name: decompiled-c
           path: decompiled.c
           if-no-files-found: error
+          retention-days: 30
